@@ -9,6 +9,7 @@ load_dotenv()
 from config import API_KEY, COMPANIES
 from alphavantage_client import AlphaVantageClient
 from extractor import Extractor
+import json
 from logger import get_logger
 
 
@@ -29,15 +30,14 @@ def main():
     te_income = financial_data.get("TE Connectivity", {}).get("income_statement")
     logger.info("TE Connectivity income statement keys: %s", list(te_income.keys()) if te_income else "no data")
 
-    import json
+    
 
     try:
-        with open("financial_data.json", 'w', encoding='utf-8') as f:
-            # O 'indent=4' formata o JSON para fácil leitura.
-            json.dump(financial_data, f, indent=4, ensure_ascii=False)
-        print(f"DEBUG: Dados salvos com sucesso em financial_data.json")
+        with open(r"data\\financial_data.json", 'w', encoding='utf-8') as f:            
+            json.dump(financial_data, f, indent=4, ensure_ascii=False)        
+        logger.info("Financial data saved to data\\financial_data.json")
     except Exception as e:
-        print(f"DEBUG ERRO: Não foi possível salvar o arquivo: {e}")
+        logger.error("Failed to save financial data: %s", e)        
 
     for company, statements in financial_data.items():
         logger.info("Company=%s statements=%s", company, list(statements.keys()))

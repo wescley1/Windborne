@@ -16,3 +16,6 @@ logs/
 
 # Editor
 .vscode/.venv/
+
+# Data
+data/
