@@ -11,6 +11,7 @@ from alphavantage_client import AlphaVantageClient
 from extractor import Extractor
 import json
 from logger import get_logger
+from pathlib import Path
 
 
 def main():
@@ -26,11 +27,6 @@ def main():
 
     # Trigger the data extraction process
     financial_data = extractor.extract_data()
-
-    te_income = financial_data.get("TE Connectivity", {}).get("income_statement")
-    logger.info("TE Connectivity income statement keys: %s", list(te_income.keys()) if te_income else "no data")
-
-    
 
     try:
         with open(r"data\\financial_data.json", 'w', encoding='utf-8') as f:            

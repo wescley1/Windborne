@@ -1,35 +1,40 @@
-class Company:
-    def __init__(self, symbol, name):
-        self.symbol = symbol
-        self.name = name
+from sqlalchemy import Column, Integer, String, Date, DateTime, ForeignKey, UniqueConstraint, Index, JSON as SQLA_JSON
+from sqlalchemy.sql import func
+from pathlib import Path
 
+from src.db import Base, engine
 
-class FinancialStatement:
-    def __init__(self, company, year, income_statement, balance_sheet, cash_flow_statement):
-        self.company = company
-        self.year = year
-        self.income_statement = income_statement
-        self.balance_sheet = balance_sheet
-        self.cash_flow_statement = cash_flow_statement
+# prefer JSONB for postgres, fallback to SQLAlchemy JSON for sqlite/dev
+try:
+    from sqlalchemy.dialects.postgresql import JSONB
+except Exception:
+    JSONB = None
 
+if getattr(engine, "dialect", None) and engine.dialect.name == "postgresql" and JSONB is not None:
+    JSON_TYPE = JSONB
+else:
+    JSON_TYPE = SQLA_JSON
 
-class IncomeStatement:
-    def __init__(self, revenue, gross_profit, operating_income, net_income):
-        self.revenue = revenue
-        self.gross_profit = gross_profit
-        self.operating_income = operating_income
-        self.net_income = net_income
+class Company(Base):
+    __tablename__ = "companies"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, unique=True)
+    ticker = Column(String(32), nullable=False, index=True)
+    # avoid using attribute name "metadata" (reserved by SQLAlchemy)
+    metadata_json = Column("metadata", JSON_TYPE, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class FinancialStatement(Base):
+    __tablename__ = "financial_statements"
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    statement_type = Column(String(64), nullable=False, index=True)  # e.g., income_statement
+    period = Column(String(32), nullable=False)  # 'annual' or 'quarterly'
+    fiscal_date = Column(Date, nullable=True, index=True)
+    data = Column(JSON_TYPE, nullable=False)  # raw normalized JSON for that fiscal period
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class BalanceSheet:
-    def __init__(self, total_assets, total_liabilities, shareholders_equity):
-        self.total_assets = total_assets
-        self.total_liabilities = total_liabilities
-        self.shareholders_equity = shareholders_equity
-
-
-class CashFlowStatement:
-    def __init__(self, operating_cash_flow, investing_cash_flow, financing_cash_flow):
-        self.operating_cash_flow = operating_cash_flow
-        self.investing_cash_flow = investing_cash_flow
-        self.financing_cash_flow = financing_cash_flow
+    __table_args__ = (
+        UniqueConstraint("company_id", "statement_type", "fiscal_date", name="u_company_statement_fiscal"),
+        Index("ix_company_statement_period", "company_id", "statement_type", "period"),
+    )
