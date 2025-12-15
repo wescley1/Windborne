@@ -1,38 +1,46 @@
 from contextlib import contextmanager
 from typing import Iterable, Optional, List
 from datetime import date
+import logging
 
 from sqlalchemy.orm import Session
 
 from src.db import engine, Base, get_session
 from src.models import Company, FinancialStatement, Metric
 
+logger = logging.getLogger(__name__)
+
 class DBManager:
     def __init__(self, engine_ = None):
         self.engine = engine_ or engine
 
     def create_tables(self) -> None:
+        """Create all tables defined in Base metadata."""
         Base.metadata.create_all(bind=self.engine)
 
     @contextmanager
     def session(self) -> Iterable[Session]:
+        """Context manager for database sessions with automatic commit/rollback."""
         s = get_session()
         try:
             yield s
             s.commit()
-        except:
+        except Exception as e:
             s.rollback()
+            logger.error(f"Session rollback due to: {e}")
             raise
         finally:
             s.close()
 
     # Companies
     def upsert_company(self, name: str, ticker: str, metadata: Optional[dict] = None) -> Company:
+        """Insert or update company by name or ticker."""
         with self.session() as s:
             c = s.query(Company).filter((Company.name == name) | (Company.ticker == ticker)).one_or_none()
             if c:
                 c.ticker = ticker or c.ticker
                 c.metadata_json = metadata or c.metadata_json
+                s.flush()
                 return c
             c = Company(name=name, ticker=ticker, metadata_json=metadata or {})
             s.add(c)
@@ -40,28 +48,72 @@ class DBManager:
             return c
 
     def get_companies(self) -> List[Company]:
+        """Retrieve all companies."""
         with self.session() as s:
             return s.query(Company).all()
 
     # Financial statements
-    def insert_financial_statement(self, company_id: int, statement_type: str, period: str, fiscal_date: Optional[date], data: dict) -> FinancialStatement:
+    def insert_financial_statement(
+        self, 
+        company_id: int, 
+        statement_type: str, 
+        period: str, 
+        fiscal_date: Optional[date], 
+        data: dict,
+        revenue: Optional[float] = None,
+        gross_profit: Optional[float] = None,
+        net_income: Optional[float] = None,
+        total_assets: Optional[float] = None,
+        total_liabilities: Optional[float] = None,
+        operating_cashflow: Optional[float] = None,
+        currency: Optional[str] = None,
+    ) -> FinancialStatement:
+        """Insert or update financial statement (idempotent by company_id, statement_type, fiscal_date)."""
         with self.session() as s:
             existing = s.query(FinancialStatement).filter_by(
-                company_id=company_id,
-                statement_type=statement_type,
-                fiscal_date=fiscal_date,
+                company_id=company_id, 
+                statement_type=statement_type, 
+                fiscal_date=fiscal_date
             ).one_or_none()
+            
             if existing:
-                # Update existing record in-place (idempotent behaviour)
-                existing.period = period or existing.period
-                existing.data = data or existing.data
+                existing.data = data
+                existing.period = period
+                existing.revenue = revenue
+                existing.gross_profit = gross_profit
+                existing.net_income = net_income
+                existing.total_assets = total_assets
+                existing.total_liabilities = total_liabilities
+                existing.operating_cashflow = operating_cashflow
+                existing.currency = currency
+                s.flush()
                 return existing
-            fs = FinancialStatement(company_id=company_id, statement_type=statement_type, period=period, fiscal_date=fiscal_date, data=data)
+            
+            fs = FinancialStatement(
+                company_id=company_id, 
+                statement_type=statement_type, 
+                period=period, 
+                fiscal_date=fiscal_date, 
+                data=data,
+                revenue=revenue,
+                gross_profit=gross_profit,
+                net_income=net_income,
+                total_assets=total_assets,
+                total_liabilities=total_liabilities,
+                operating_cashflow=operating_cashflow,
+                currency=currency,
+            )
             s.add(fs)
             s.flush()
             return fs
 
-    def fetch_financials(self, company_id: Optional[int]=None, statement_type: Optional[str]=None, period: Optional[str]=None):
+    def fetch_financials(
+        self, 
+        company_id: Optional[int] = None, 
+        statement_type: Optional[str] = None, 
+        period: Optional[str] = None
+    ) -> List[FinancialStatement]:
+        """Fetch financial statements with optional filters."""
         with self.session() as s:
             q = s.query(FinancialStatement)
             if company_id is not None:
@@ -74,17 +126,20 @@ class DBManager:
 
     # Metrics
     def upsert_metric(self, company_id: int, year: int, metric_name: str, value: Optional[float]) -> Metric:
+        """Insert or update metric (idempotent by company_id, year, metric_name)."""
         with self.session() as s:
             m = s.query(Metric).filter_by(company_id=company_id, year=year, metric_name=metric_name).one_or_none()
             if m:
                 m.value = value
+                s.flush()
                 return m
             m = Metric(company_id=company_id, year=year, metric_name=metric_name, value=value)
             s.add(m)
             s.flush()
             return m
 
-    def get_metrics(self, company_id: Optional[int]=None):
+    def get_metrics(self, company_id: Optional[int] = None) -> List[Metric]:
+        """Retrieve metrics with optional company filter."""
         with self.session() as s:
             q = s.query(Metric)
             if company_id is not None:

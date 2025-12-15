@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 import streamlit as st
@@ -64,7 +64,7 @@ def filter_df(df, selected_companies, metric, year_range):
     out = out[(out["year"] >= year_range[0]) & (out["year"] <= year_range[1])]
     return out
 
-st.title("WindBorne — Metrics Dashboard")
+st.title("Financial Metrics Dashboard")
 
 with st.sidebar:
     st.header("Filters")
@@ -76,11 +76,9 @@ with st.sidebar:
     default_comp = companies[0] if companies else None
     selected_companies = st.multiselect("Companies", companies, default=[default_comp] if default_comp else [])
     
-    # Display metrics with units in dropdown
     metrics = sorted(df_all["metric"].unique().tolist())
     metric_display = {m: get_metric_label(m) for m in metrics}
     selected_metric_display = st.selectbox("Metric", options=list(metric_display.values()))
-    # Get actual metric key
     selected_metric = [k for k, v in metric_display.items() if v == selected_metric_display][0]
     
     years = sorted(df_all["year"].unique())
@@ -88,7 +86,7 @@ with st.sidebar:
     year_range = st.slider("Year range", ymin, ymax, (ymin, ymax)) if years else (None, None)
     if st.button("Refresh data"):
         st.cache_data.clear()
-        st.experimental_rerun()
+        st.rerun()
 
 main_df = filter_df(df_all, selected_companies, selected_metric, year_range)
 
@@ -99,7 +97,6 @@ with col1:
     if main_df.empty:
         st.info("No data for selected filters.")
     else:
-        # Line chart with unit in y-axis
         fig = px.line(main_df, x="year", y="value", color="company", markers=True,
                       labels={"value": metric_label, "year": "Year", "company": "Company"})
         fig.update_layout(
@@ -116,13 +113,11 @@ with col2:
     else:
         latest = main_df.groupby("company").apply(lambda g: g.loc[g["year"].idxmax()]).reset_index(drop=True)
         latest = latest[["company","year","value"]].rename(columns={"year":"latest_year","value":"latest_value"})
-        # Format value with unit
         unit = METRIC_UNITS.get(selected_metric, "")
         latest["latest_value_formatted"] = latest["latest_value"].apply(
             lambda x: f"{x:.2f} {unit}".strip() if x is not None else "—"
         )
         
-        # sanitize to native Python types
         def native_val(v):
             if v is None:
                 return None
@@ -140,7 +135,6 @@ with col2:
 
 st.markdown("---")
 st.subheader("Data table")
-# Add formatted column to main table
 unit = METRIC_UNITS.get(selected_metric, "")
 main_df_display = main_df.copy()
 main_df_display["value_formatted"] = main_df_display["value"].apply(
