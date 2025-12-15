@@ -10,5 +10,22 @@ services:
       - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+
+  worker:
+    image: python:3.12-slim
+    depends_on:
+      - db
+    working_dir: /app
+    volumes:
+      - ./:/app:cached
+    environment:
+      DATABASE_URL: "postgresql+psycopg2://windborne:password@db:5432/windborne"
+      PYTHONUNBUFFERED: "1"
+    command: >
+      bash -lc "pip install -q --no-warn-script-location -r requirements.txt &&
+               python scripts/load_financials.py &&
+               python scripts/calc_metrics.py"
+    restart: "no"
+
 volumes:
   db_data:

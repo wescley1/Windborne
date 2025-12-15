@@ -1,87 +1,74 @@
 import os
-import json
-from datetime import datetime
-from pathlib import Path
 import sys
-
+from pathlib import Path
+from datetime import datetime
+import json
 from dotenv import load_dotenv
+
+# Load environment variables early so `config` can read them
 load_dotenv()
 
 # ensure repo root is on sys.path so "from src ..." imports work
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.db import engine, Base, get_session
-from src.models import Company, FinancialStatement
+from src.db import engine
+from src.db_manager import DBManager
 
 DATA_PATH = Path("data/financial_data.json")
 
 def parse_date(s):
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y%m%d", "%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except Exception:
+            continue
     try:
         return datetime.fromisoformat(s).date()
     except Exception:
         return None
 
-def ensure_tables():
-    Base.metadata.create_all(bind=engine)
+def ensure_tables(dbm: DBManager):
+    dbm.create_tables()
 
 def load():
+    dbm = DBManager(engine)
+    ensure_tables(dbm)
+
     if not DATA_PATH.exists():
-        raise SystemExit(f"{DATA_PATH} not found")
-    
-    ensure_tables()
-    with open(DATA_PATH, encoding="utf-8") as fh:
-        payload = json.load(fh)
+        print("data/financial_data.json not found")
+        return
 
-    session = get_session()
+    payload = json.loads(DATA_PATH.read_text(encoding="utf-8"))
+    # expected payload: list of companies with keys: name, ticker, statements (list)
+    inserted = 0
+    for company_name, company_data in payload.items():
+        # extrair ticker (se presente em qualquer statement)
+        ticker = None
+        for s in ("income_statement", "balance_sheet", "cash_flow_statement"):
+            if company_data.get(s) and company_data[s].get("symbol"):
+                ticker = company_data[s]["symbol"]
+                break
 
-    
-    
-    try:
-        for company_name, statements in payload.items():
-            ticker = statements.get("income_statement", {}).get("symbol") or statements.get("balance_sheet", {}).get("symbol")
-            # upsert company (simple)
-            company = session.query(Company).filter(Company.name == company_name).one_or_none()
-            if not company:
-                company = Company(name=company_name, ticker=ticker, metadata_json={})
-                session.add(company)
-                session.flush()  # populate id
+        company = dbm.upsert_company(name=company_name, ticker=ticker, metadata={})
 
-            # load each statement type (annual only, last 3 entries)
-            mapping = {
-                "income_statement": statements.get("income_statement", {}).get("annualReports", []),
-                "balance_sheet": statements.get("balance_sheet", {}).get("annualReports", []),
-                "cash_flow_statement": statements.get("cash_flow_statement", {}).get("annualReports", []),
-            }
-            for stype, reports in mapping.items():
-                # take first 3 (assumes most recent first)
-                for report in reports[:3]:
-                    fiscal = parse_date(report.get("fiscalDateEnding") or report.get("fiscal_date") or "")
-                    # skip if duplicate exists
-                    exists = session.query(FinancialStatement).filter_by(
-                        company_id=company.id,
-                        statement_type=stype,
-                        fiscal_date=fiscal
-                    ).one_or_none()
-                    if exists:
-                        continue
-                    fs = FinancialStatement(
-                        company_id=company.id,
-                        statement_type=stype,
-                        period="annual",
-                        fiscal_date=fiscal,
-                        data=report
-                    )
-                    session.add(fs)
+        # para cada tipo de demonstração, pegar annualReports e inserir
+        for stype in ("income_statement", "balance_sheet", "cash_flow_statement"):
+            reports = company_data.get(stype, {}).get("annualReports", []) or []
+            for rep in reports:
+                fiscal = parse_date(rep.get("fiscalDateEnding") or rep.get("fiscal_date"))
+                dbm.insert_financial_statement(
+                    company_id=company.id,
+                    statement_type=stype,
+                    period="annual",
+                    fiscal_date=fiscal,
+                    data=rep
+                )
+                inserted += 1
 
-        session.commit()
-        print("Loaded financial statements into DB")
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+    print(f"Loaded {inserted} financial statements into DB")
 
 if __name__ == "__main__":
-    print(os.getenv("DATABASE_URL"))
     load()
