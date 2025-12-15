@@ -281,10 +281,6 @@ docker-compose exec db psql -U windborne -d windborne -c "SELECT 1;"
 - [Streamlit Docs](https://docs.streamlit.io/)
 - [SQLAlchemy ORM](https://docs.sqlalchemy.org/)
 
-## License
-
-MIT License — see [LICENSE](LICENSE) file
-
 ## Acknowledgments
 
 - Alpha Vantage for financial data API
@@ -292,7 +288,4 @@ MIT License — see [LICENSE](LICENSE) file
 - WindBorne Systems for the assignment opportunity
 
 ---
-
-**Questions?** Open an issue or contact [your-email@example.com](mailto:your-email@example.com)
-
 **Live Dashboard:** [https://windborne-s220.onrender.com](https://windborne-s220.onrender.com)
